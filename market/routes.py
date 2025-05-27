@@ -1,20 +1,32 @@
-from market.forms import RegisterForm, LoginForm
+from market.forms import RegisterForm, LoginForm, PurchaseItemForm
 from market import app
-from flask import render_template, redirect, url_for, flash, get_flashed_messages
+from flask import render_template, redirect, url_for, flash, get_flashed_messages, request
 from market.models import Item, User 
 from market import db
-from flask_login import login_user
-
+from flask_login import login_user, logout_user, login_required, current_user
 
 @app.route('/')
 @app.route('/home')
 def home_page():
     return render_template('home.html')
 
-@app.route('/market')
+@app.route('/market', methods=['GET','POST'])
+@login_required
 def market_page(): 
-    items = Item.query.all()
-    return render_template('market.html', items=items)
+    purchase_form = PurchaseItemForm()
+    if request.method == 'POST':
+        purchased_item = request.form.get('purchased_item')
+        p_item_object = Item.query.filter_by(name=purchased_item).first()
+        if p_item_object:
+            p_item_object.owner = current_user.id
+            current_user.budget -= p_item_object.price
+            db.session.commit()
+
+    #if purchase_form.validate_on_submit():
+        #print(request.form.get('purchased_item'))
+    items = Item.query.filter_by(owner=None)
+
+    return render_template('market.html', items=items, purchase_form=purchase_form)
 
 @app.route('/register', methods=['GET','POST'])
 def register_page():  
@@ -25,11 +37,13 @@ def register_page():
                               password=form.password1.data)
         db.session.add(user_to_create)    
         db.session.commit() 
+        login_user(user_to_create)
+        flash (f'Account created successfully! You are now logged in as : {user_to_create.username}', category='success')
         return redirect(url_for('market_page')) 
     if form.errors != {}: #if there are not errors from the validations
          for err_msg in form.errors.values():
             flash(f'There was an erro with creating a user: {err_msg}', category='danger')
-
+ 
     return render_template('register.html', form=form)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -47,3 +61,9 @@ def login_page():
             flash('Username and password are not match! Please try again', category='danger')
 
     return render_template('login.html', form=form)
+
+@app.route('/logout')
+def logout_page():
+    logout_user()
+    flash("You have been logged out!", category='info')
+    return redirect(url_for("home_page"))
